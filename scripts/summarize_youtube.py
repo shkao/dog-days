@@ -126,7 +126,8 @@ def process_youtube_audio(youtube_url):
 
     if not os.path.exists(transcript_path):
         transcript = transcribe_audio(processed_audio_path)
-        save_content(transcript, transcript_path)
+        transcript_with_url = f"{transcript}\n\nSource URL: {sanitized_url}"
+        save_content(transcript_with_url, transcript_path)
     else:
         logging.info(f"Transcript already exists at {transcript_path}")
         transcript = read_content(transcript_path)
@@ -135,7 +136,8 @@ def process_youtube_audio(youtube_url):
         summary = generate_summary(
             f"Please summarize the following transcript and generate detailed notes:\n\n{transcript}"
         )
-        save_content(summary, summary_path)
+        summary_with_url = f"{summary}\n\nSource URL: {sanitized_url}"
+        save_content(summary_with_url, summary_path)
     else:
         logging.info(f"Summary already exists at {summary_path}")
 
