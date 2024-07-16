@@ -12,6 +12,10 @@ This repository contains my notes and resources for learning domain knowledge in
 - Mathematics
 - Medicinal Chemistry
 
+![Domain Knowledge Areas](images/domains.png)
+
+The image above illustrates the interconnected nature of these domains, with AIDD (AI-Driven Drug Discovery) at the center, representing the convergence of these fields in modern drug discovery processes.
+
 ## Structure
 
 Each subdirectory in `domain-knowledge/` contains a README.md file with specific information about that domain. As I progress in my learning journey, I'll be adding more detailed notes, resources, and possibly code examples to each area.
