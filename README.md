@@ -26,3 +26,8 @@ Note: Make sure to set your OpenAI API key as an environment variable (`OPENAI_A
 ## Future Additions
 
 This repository will be updated with more tools, notes, and resources as I continue my AI learning journey.
+
+## Source of Materials
+
+The materials and inspiration for this project come from the YouTube channel of Boris Meinardus:
+[https://www.youtube.com/@borismeinardus](https://www.youtube.com/@borismeinardus)
