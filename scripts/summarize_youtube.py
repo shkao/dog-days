@@ -149,6 +149,9 @@ def process_youtube_audio(youtube_url):
         os.remove(processed_audio_path)
         logging.info(f"Removed processed audio file {processed_audio_path}")
 
+    if os.path.exists(summary_path):
+        os.system(f'code "{summary_path}"')
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
