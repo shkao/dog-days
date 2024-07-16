@@ -22,13 +22,11 @@ logging.basicConfig(
 client = Groq()
 
 
-def download_and_process_audio(youtube_url, output_dir):
-    """Download and process audio from YouTube using yt-dlp and ffmpeg."""
+def download_audio(youtube_url, output_dir):
+    """Download audio from YouTube and save as mp3."""
     logging.info(f"Downloading audio from {youtube_url}")
     audio_path = os.path.join(output_dir, "audio.mp3")
-    processed_audio_path = os.path.join(output_dir, "audio_processed.mp3")
 
-    # yt-dlp options for downloading the best audio format and extracting as mp3
     ydl_opts = {
         "format": "bestaudio/best",
         "outtmpl": audio_path.replace(".mp3", ""),
@@ -41,75 +39,60 @@ def download_and_process_audio(youtube_url, output_dir):
         ],
     }
 
-    # Download audio from YouTube
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         ydl.download([youtube_url])
 
     logging.info(f"Downloaded audio to {audio_path}")
+    return audio_path
 
-    # Process the audio file with ffmpeg to required format
+
+def process_audio(audio_path, output_dir):
+    """Process the downloaded audio file with ffmpeg."""
+    processed_audio_path = os.path.join(output_dir, "audio_processed.mp3")
     os.system(
         f'ffmpeg -i "{audio_path}" -ar 16000 -ac 1 -map 0:a "{processed_audio_path}"'
     )
     logging.info(f"Processed audio saved to {processed_audio_path}")
-
     return processed_audio_path
 
 
-def transcribe_audio(processed_audio_path):
+def transcribe_audio(audio_path):
     """Transcribe audio using Groq's Whisper API."""
-    logging.info(f"Starting transcription for {processed_audio_path}")
-
-    # Open the processed audio file for reading
-    with open(processed_audio_path, "rb") as file:
+    logging.info(f"Starting transcription for {audio_path}")
+    with open(audio_path, "rb") as file:
         transcription = client.audio.transcriptions.create(
-            file=(processed_audio_path, file.read()),
+            file=(audio_path, file.read()),
             model=WHISPER_MODEL_SIZE,
-            response_format="json",  # Optional
-            language="en",  # Optional
-            temperature=0.0,  # Optional
+            response_format="json",
+            language="en",
+            temperature=0.0,
         )
-
-    transcript_text = transcription.text
-
-    logging.info(f"Transcription completed for {processed_audio_path}")
-    return transcript_text
+    logging.info(f"Transcription completed for {audio_path}")
+    return transcription.text
 
 
-def save_to_file(content, filename):
+def save_content(content, filepath):
     """Save content to a file."""
-    with open(filename, "w", encoding="utf-8") as file:
+    with open(filepath, "w", encoding="utf-8") as file:
         file.write(content)
-    logging.info(f"Content saved to {filename}")
+    logging.info(f"Content saved to {filepath}")
 
 
-def read_from_file(filename):
+def read_content(filepath):
     """Read content from a file."""
-    logging.info(f"Reading content from {filename}")
-    with open(filename, "r", encoding="utf-8") as file:
+    logging.info(f"Reading content from {filepath}")
+    with open(filepath, "r", encoding="utf-8") as file:
         return file.read()
 
 
-def generate_response(prompt):
-    """Generate a response using LiteLLM."""
-    logging.info("Generating response from LiteLLM")
+def generate_summary(prompt):
+    """Generate a summary using LiteLLM."""
+    logging.info("Generating summary from LiteLLM")
     messages = [{"content": prompt, "role": "user"}]
     response = completion(model=MODEL_NAME, messages=messages)
-
-    # Calculate and log the cost of the response
     cost = completion_cost(completion_response=response)
     logging.info(f"Response cost: ${float(cost):.5f}")
-
     return response["choices"][0]["message"]["content"]
-
-
-def summarize_transcript(transcript):
-    """Summarize the transcript and generate notes."""
-    logging.info("Summarizing transcript")
-    summary = generate_response(
-        f"Please summarize the following transcript and generate detailed notes:\n\n{transcript}"
-    )
-    return summary
 
 
 def get_video_title(youtube_url):
@@ -125,47 +108,51 @@ def get_video_title(youtube_url):
 
 def process_youtube_audio(youtube_url):
     """Main function to handle the workflow."""
-    logging.info(f"Processing YouTube audio for URL: {youtube_url}")
-    video_title = get_video_title(youtube_url)
+    sanitized_url = youtube_url.replace("\\", "")
+    logging.info(f"Processing YouTube audio for URL: {sanitized_url}")
+    video_title = get_video_title(sanitized_url)
     script_dir = os.path.dirname(os.path.abspath(__file__))
     output_dir = os.path.join(script_dir, "../output", video_title)
 
-    # Create output directory if it doesn't exist
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
         logging.info(f"Created directory {output_dir}")
 
-    # Download and process the audio
-    processed_audio_path = download_and_process_audio(youtube_url, output_dir)
+    audio_path = download_audio(sanitized_url, output_dir)
+    processed_audio_path = process_audio(audio_path, output_dir)
 
     transcript_path = os.path.join(output_dir, "transcript.txt")
-    srt_path = os.path.join(output_dir, "transcript.srt")
+    summary_path = os.path.join(output_dir, "summary.md")
 
-    # Transcribe audio if transcript and SRT files do not exist
-    if not os.path.exists(transcript_path) or not os.path.exists(srt_path):
+    if not os.path.exists(transcript_path):
         transcript = transcribe_audio(processed_audio_path)
-        save_to_file(transcript, transcript_path)
+        save_content(transcript, transcript_path)
     else:
         logging.info(f"Transcript already exists at {transcript_path}")
-        logging.info(f"SRT file already exists at {srt_path}")
-        transcript = read_from_file(transcript_path)
+        transcript = read_content(transcript_path)
 
-    summary_path = os.path.join(output_dir, "summary.txt")
-    # Summarize transcript if summary file does not exist
     if not os.path.exists(summary_path):
-        summary = summarize_transcript(transcript)
-        save_to_file(summary, summary_path)
+        summary = generate_summary(
+            f"Please summarize the following transcript and generate detailed notes:\n\n{transcript}"
+        )
+        save_content(summary, summary_path)
     else:
         logging.info(f"Summary already exists at {summary_path}")
 
+    # Remove audio files after all jobs are done
+    if os.path.exists(audio_path):
+        os.remove(audio_path)
+        logging.info(f"Removed audio file {audio_path}")
+    if os.path.exists(processed_audio_path):
+        os.remove(processed_audio_path)
+        logging.info(f"Removed processed audio file {processed_audio_path}")
+
 
 if __name__ == "__main__":
-    # Argument parser for command-line interface
     parser = argparse.ArgumentParser(
         description="Download, transcribe, and summarize YouTube audio."
     )
     parser.add_argument("youtube_url", help="URL of the YouTube video")
     args = parser.parse_args()
 
-    # Process YouTube audio based on provided URL
     process_youtube_audio(args.youtube_url)
