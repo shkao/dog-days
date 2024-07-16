@@ -59,6 +59,8 @@ def process_audio(audio_path, output_dir):
 def transcribe_audio(audio_path):
     """Transcribe audio using Groq's Whisper API."""
     logging.info(f"Starting transcription for {audio_path}")
+    if not os.path.exists(audio_path):
+        raise FileNotFoundError(f"Audio file not found: {audio_path}")
     with open(audio_path, "rb") as file:
         transcription = client.audio.transcriptions.create(
             file=(audio_path, file.read()),
@@ -111,8 +113,12 @@ def process_youtube_audio(youtube_url):
     sanitized_url = youtube_url.replace("\\", "")
     logging.info(f"Processing YouTube audio for URL: {sanitized_url}")
     video_title = get_video_title(sanitized_url)
+    sanitized_video_title = "".join(
+        c for c in video_title if c.isalnum() or c in (" ", "_")
+    ).rstrip()
+    sanitized_video_title = " ".join(sanitized_video_title.split())
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    output_dir = os.path.join(script_dir, "../notes/youtube", video_title)
+    output_dir = os.path.join(script_dir, "../notes/youtube", sanitized_video_title)
 
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)

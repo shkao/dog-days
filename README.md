@@ -27,11 +27,13 @@ Located in `scripts/summarize_youtube.py`, this tool helps in my learning proces
 3. Generating a summary of the transcript using LiteLLM (GPT-4)
 
 Usage:
+
 ```
 python scripts/summarize_youtube.py <youtube_url>
 ```
 
 The script creates an output directory with the video title, containing:
+
 - `transcript.txt`: Full transcription of the video
 - `summary.md`: Detailed summary and notes generated from the transcript
 
