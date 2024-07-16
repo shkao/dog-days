@@ -112,7 +112,7 @@ def process_youtube_audio(youtube_url):
     logging.info(f"Processing YouTube audio for URL: {sanitized_url}")
     video_title = get_video_title(sanitized_url)
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    output_dir = os.path.join(script_dir, "../output", video_title)
+    output_dir = os.path.join(script_dir, "../notes/youtube", video_title)
 
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
