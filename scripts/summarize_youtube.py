@@ -1,9 +1,11 @@
 import argparse
 import logging
 import os
+import time
 import yt_dlp
+import whisper
 from litellm import completion, completion_cost
-from groq import Groq
+from groq import Groq, RateLimitError
 
 # Set your OpenAI API key
 os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY")
@@ -56,21 +58,39 @@ def process_audio(audio_path, output_dir):
     return processed_audio_path
 
 
-def transcribe_audio(audio_path):
-    """Transcribe audio using Groq's Whisper API."""
+def transcribe_audio(audio_path, max_retries=3, initial_delay=60):
+    """Transcribe audio using Groq's Whisper API with retry mechanism."""
     logging.info(f"Starting transcription for {audio_path}")
     if not os.path.exists(audio_path):
         raise FileNotFoundError(f"Audio file not found: {audio_path}")
-    with open(audio_path, "rb") as file:
-        transcription = client.audio.transcriptions.create(
-            file=(audio_path, file.read()),
-            model=WHISPER_MODEL_SIZE,
-            response_format="json",
-            language="en",
-            temperature=0.0,
-        )
-    logging.info(f"Transcription completed for {audio_path}")
-    return transcription.text
+
+    retries = 0
+    while retries < max_retries:
+        try:
+            with open(audio_path, "rb") as file:
+                transcription = client.audio.transcriptions.create(
+                    file=(audio_path, file.read()),
+                    model=WHISPER_MODEL_SIZE,
+                    response_format="json",
+                    language="en",
+                    temperature=0.0,
+                )
+            logging.info(f"Transcription completed for {audio_path}")
+            return transcription.text
+        except RateLimitError as err:
+            wait_time = initial_delay * (2**retries)  # Exponential backoff
+            logging.warning(
+                f"Rate limit reached: {err}. Retrying in {wait_time} seconds..."
+            )
+            time.sleep(wait_time)
+            retries += 1
+
+    logging.warning(
+        "Max retries exceeded for Groq transcription due to rate limit. Falling back to local transcription."
+    )
+    model = whisper.load_model("medium")
+    result = model.transcribe(audio_path)
+    return result["text"]
 
 
 def save_content(content, filepath):
@@ -88,12 +108,18 @@ def read_content(filepath):
 
 
 def generate_summary(prompt):
-    """Generate a summary using LiteLLM."""
-    logging.info("Generating summary from LiteLLM")
+    """Generate a summary using LiteLLM and convert cost from USD to TWD."""
+    logging.info("Generating summary using LiteLLM")
     messages = [{"content": prompt, "role": "user"}]
     response = completion(model=MODEL_NAME, messages=messages)
-    cost = completion_cost(completion_response=response)
-    logging.info(f"Response cost: ${float(cost):.5f}")
+    cost_usd = completion_cost(completion_response=response)
+
+    # Conversion rate from USD to TWD
+    conversion_rate_usd_to_twd = 31.0  # Example exchange rate
+    cost_twd = float(cost_usd) * conversion_rate_usd_to_twd
+    logging.info(
+        f"\033[91mResponse cost: ${float(cost_usd):.2f} USD ({cost_twd:.2f} TWD)\033[0m"
+    )
     return response["choices"][0]["message"]["content"]
 
 
@@ -117,12 +143,16 @@ def process_youtube_audio(youtube_url):
         c for c in video_title if c.isalnum() or c in (" ", "_")
     ).rstrip()
     sanitized_video_title = " ".join(sanitized_video_title.split())
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    output_dir = os.path.join(script_dir, "../notes/youtube", sanitized_video_title)
+    output_dir = os.path.join(os.getcwd(), sanitized_video_title)
 
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-        logging.info(f"Created directory {output_dir}")
+    if os.path.exists(output_dir):
+        logging.info(
+            f"Output directory {output_dir} already exists. Skipping processing."
+        )
+        return
+
+    os.makedirs(output_dir)
+    logging.info(f"Created directory {output_dir}")
 
     audio_path = download_audio(sanitized_url, output_dir)
     processed_audio_path = process_audio(audio_path, output_dir)
@@ -130,22 +160,15 @@ def process_youtube_audio(youtube_url):
     transcript_path = os.path.join(output_dir, "transcript.txt")
     summary_path = os.path.join(output_dir, "summary.md")
 
-    if not os.path.exists(transcript_path):
-        transcript = transcribe_audio(processed_audio_path)
-        transcript_with_url = f"{transcript}\n\nSource URL: {sanitized_url}"
-        save_content(transcript_with_url, transcript_path)
-    else:
-        logging.info(f"Transcript already exists at {transcript_path}")
-        transcript = read_content(transcript_path)
+    transcript = transcribe_audio(processed_audio_path)
+    transcript_with_url = f"{transcript}\n\nSource URL: {sanitized_url}"
+    save_content(transcript_with_url, transcript_path)
 
-    if not os.path.exists(summary_path):
-        summary = generate_summary(
-            f"Please summarize the following transcript and generate detailed notes:\n\n{transcript}"
-        )
-        summary_with_url = f"{summary}\n\nSource URL: {sanitized_url}"
-        save_content(summary_with_url, summary_path)
-    else:
-        logging.info(f"Summary already exists at {summary_path}")
+    summary = generate_summary(
+        f"Please summarize the following transcript and generate detailed notes:\n\n{transcript}"
+    )
+    summary_with_url = f"{summary}\n\nSource URL: {sanitized_url}"
+    save_content(summary_with_url, summary_path)
 
     # Remove audio files after all jobs are done
     if os.path.exists(audio_path):
@@ -159,11 +182,24 @@ def process_youtube_audio(youtube_url):
         os.system(f'code "{summary_path}"')
 
 
+def process_youtube_playlist(file_path):
+    """Process a text file containing YouTube URLs."""
+    with open(file_path, "r") as file:
+        urls = file.readlines()
+    for url in urls:
+        process_youtube_audio(url.strip())
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Download, transcribe, and summarize YouTube audio."
     )
-    parser.add_argument("youtube_url", help="URL of the YouTube video")
+    parser.add_argument(
+        "input", help="URL of the YouTube video or path to a text file containing URLs"
+    )
     args = parser.parse_args()
 
-    process_youtube_audio(args.youtube_url)
+    if os.path.isfile(args.input):
+        process_youtube_playlist(args.input)
+    else:
+        process_youtube_audio(args.input)
