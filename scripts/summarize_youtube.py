@@ -11,7 +11,7 @@ from groq import Groq, RateLimitError
 os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY")
 
 # Constants
-MODEL_NAME = "gpt-4o"
+MODEL_NAME = "gpt-4o-mini"
 WHISPER_MODEL_SIZE = "whisper-large-v3"
 DEFAULT_AUDIO_PATH = "audio.mp3"
 
